@@ -121,4 +121,61 @@ impl StellarStream {
 
         withdrawable_amount
     }
+
+    pub fn cancel_stream(env: Env, stream_id: u64) {
+        // 1. Fetch the Stream first to identify the sender
+        let stream: Stream = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Stream(stream_id))
+            .unwrap_or_else(|| panic!("Stream does not exist"));
+
+        // 2. Auth: Only the original sender can cancel the stream
+        stream.sender.require_auth();
+
+        let now = env.ledger().timestamp();
+
+        // 3. Validation: If the stream is already finished, there's nothing to cancel
+        if now >= stream.end_time {
+            panic!("Stream has already completed and cannot be cancelled");
+        }
+
+        // 4. Calculate Final Split
+        // Total Unlocked is what the receiver is entitled to up to this second
+        let total_unlocked =
+            math::calculate_unlocked(stream.amount, stream.start_time, stream.end_time, now);
+
+        // Receiver gets: (What they are owed now) - (What they already took)
+        let withdrawable_to_receiver = total_unlocked - stream.withdrawn_amount;
+
+        // Sender gets: (Original Total) - (Total Unlocked for receiver)
+        let refund_to_sender = stream.amount - total_unlocked;
+
+        let token_client = token::Client::new(&env, &stream.token);
+        let contract_address = env.current_contract_address();
+
+        // 5. Execute Payouts
+        // Step 1: Pay the receiver their final piece of the pie
+        if withdrawable_to_receiver > 0 {
+            token_client.transfer(
+                &contract_address,
+                &stream.receiver,
+                &withdrawable_to_receiver,
+            );
+        }
+
+        // Step 2: Refund the remaining balance to the sender
+        if refund_to_sender > 0 {
+            token_client.transfer(&contract_address, &stream.sender, &refund_to_sender);
+        }
+
+        // 6. Cleanup: Remove from Persistent storage to save ledger space and prevent re-entry
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Stream(stream_id));
+
+        // 7. Emit Event
+        env.events()
+            .publish((symbol_short!("cancel"), stream_id), stream.sender);
+    }
 }
