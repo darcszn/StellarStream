@@ -1,8 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
 export function HeroSection() {
+  const router = useRouter();
+
   return (
     <main className="relative isolate min-h-screen overflow-hidden bg-[#030303] px-5 py-12 md:px-10 md:py-16">
       <div className="pointer-events-none absolute inset-0">
@@ -77,6 +80,7 @@ export function HeroSection() {
                 whileTap={{ scale: 0.98 }}
                 className="font-body neon-glow hover:neon-glow-hover rounded-full border border-[#00F5FF]/50 bg-[#00F5FF]/14 px-7 py-3 text-sm font-semibold text-[#D1FCFF]"
                 type="button"
+                onClick={() => router.push("/dashboard")}
               >
                 Start Streaming
               </motion.button>
