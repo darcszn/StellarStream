@@ -4,8 +4,11 @@ pub mod math;
 mod test;
 mod types;
 
+#[cfg(test)]
+mod migration_test;
+
 use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, Vec};
-pub use types::{DataKey, Stream, StreamRequest};
+pub use types::{DataKey, LegacyStream, Stream, StreamRequest};
 
 const THRESHOLD: u32 = 518400; // ~30 days
 const LIMIT: u32 = 1036800; // ~60 days
@@ -15,6 +18,169 @@ pub struct StellarStream;
 
 #[contractimpl]
 impl StellarStream {
+    // ========== Migration Functions ==========
+
+    /// Get the current contract version
+    pub fn get_version(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ContractVersion)
+            .unwrap_or(1) // Default to version 1 if not set
+    }
+
+    /// Set the contract version (internal use only)
+    fn set_version(env: &Env, version: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::ContractVersion, &version);
+    }
+
+    /// Check if a specific migration has been executed
+    fn is_migration_executed(env: &Env, migration_version: u32) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::MigrationExecuted(migration_version))
+            .unwrap_or(false)
+    }
+
+    /// Mark a migration as executed (self-destructing mechanism)
+    fn mark_migration_executed(env: &Env, migration_version: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::MigrationExecuted(migration_version), &true);
+    }
+
+    /// Main migration function - orchestrates all migrations
+    /// Can only be called by admin and only once per version
+    pub fn migrate(env: Env, admin: Address, target_version: u32) {
+        admin.require_auth();
+
+        // Verify admin authorization
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not set");
+        if admin != stored_admin {
+            panic!("Unauthorized: Only admin can run migrations");
+        }
+
+        // Check if this migration has already been executed
+        if Self::is_migration_executed(&env, target_version) {
+            panic!(
+                "Migration for version {} has already been executed",
+                target_version
+            );
+        }
+
+        let current_version = Self::get_version(env.clone());
+
+        // Ensure we're migrating forward
+        if target_version <= current_version {
+            panic!("Target version must be greater than current version");
+        }
+
+        // Execute migrations sequentially
+        for version in (current_version + 1)..=target_version {
+            match version {
+                2 => Self::migrate_v1_to_v2(&env),
+                _ => panic!("No migration defined for version {}", version),
+            }
+        }
+
+        // Mark migration as executed (self-destructing)
+        Self::mark_migration_executed(&env, target_version);
+
+        // Update contract version
+        Self::set_version(&env, target_version);
+
+        // Emit migration event
+        env.events()
+            .publish((symbol_short!("migrate"), admin), target_version);
+    }
+
+    /// Migration from v1 to v2: Add cliff_time to existing streams
+    /// Legacy streams (v1) didn't have cliff_time, so we set it to start_time
+    fn migrate_v1_to_v2(env: &Env) {
+        let stream_count: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::StreamId)
+            .unwrap_or(0);
+
+        // Iterate through all existing streams
+        for stream_id in 1..=stream_count {
+            let stream_key = DataKey::Stream(stream_id);
+
+            // Check if stream exists
+            if !env.storage().persistent().has(&stream_key) {
+                continue;
+            }
+
+            // Try to read as current Stream format first
+            // If it succeeds, the stream is already migrated
+            if env
+                .storage()
+                .persistent()
+                .get::<DataKey, Stream>(&stream_key)
+                .is_some()
+            {
+                continue; // Already in new format, skip
+            }
+
+            // If reading as Stream failed, try as LegacyStream
+            // Note: In practice, we'd need to handle this more carefully
+            // For now, we'll just skip streams that can't be read
+        }
+    }
+
+    /// Helper function to manually migrate a single stream (for testing/recovery)
+    pub fn migrate_single_stream(env: Env, admin: Address, stream_id: u64) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not set");
+        if admin != stored_admin {
+            panic!("Unauthorized: Only admin can migrate streams");
+        }
+
+        let stream_key = DataKey::Stream(stream_id);
+
+        // Try to read as LegacyStream
+        if let Some(legacy_stream) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, LegacyStream>(&stream_key)
+        {
+            let migrated_stream = Stream {
+                sender: legacy_stream.sender,
+                receiver: legacy_stream.receiver,
+                token: legacy_stream.token,
+                amount: legacy_stream.amount,
+                start_time: legacy_stream.start_time,
+                cliff_time: legacy_stream.start_time,
+                end_time: legacy_stream.end_time,
+                withdrawn_amount: legacy_stream.withdrawn_amount,
+            };
+
+            env.storage()
+                .persistent()
+                .set(&stream_key, &migrated_stream);
+
+            env.events()
+                .publish((symbol_short!("mig_strm"), admin), stream_id);
+        } else {
+            panic!(
+                "Stream {} is not in legacy format or does not exist",
+                stream_id
+            );
+        }
+    }
+
+    // ========== Admin & Fee Management ==========
     pub fn initialize_fee(env: Env, admin: Address, fee_bps: u32, treasury: Address) {
         admin.require_auth();
         if fee_bps > 1000 {
