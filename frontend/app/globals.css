@@ -169,6 +169,24 @@ body {
   animation: pulse-border 2s ease-in-out infinite;
 }
 
+/* Token Selector Custom Scrollbar */
+.token-selector-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.token-selector-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.token-selector-scroll::-webkit-scrollbar-thumb {
+  background: var(--stellar-primary);
+  border-radius: 2px;
+}
+
+.token-selector-scroll::-webkit-scrollbar-thumb:hover {
+  background: #00d4e6;
+}
+
 /* Custom scrollbar for Stellar Glass aesthetic */
 ::-webkit-scrollbar {
   width: 8px;
