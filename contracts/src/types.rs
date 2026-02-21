@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, BytesN};
 
 // Interest distribution strategies
 // Bits can be combined: e.g., 0b011 = 50% sender, 50% receiver
@@ -26,6 +26,7 @@ pub struct Stream {
     pub interest_strategy: u32, // Strategy for interest distribution
     pub vault_address: Option<Address>, // Optional vault for yield generation
     pub deposited_principal: i128, // Amount deposited in vault (for tracking)
+    pub metadata: Option<BytesN<32>>, // Optional fixed-size off-chain reference
 }
 
 // Legacy Stream struct (v1) - for migration example
@@ -52,6 +53,7 @@ pub struct StreamRequest {
     pub end_time: u64,
     pub interest_strategy: u32,
     pub vault_address: Option<Address>,
+    pub metadata: Option<BytesN<32>>,
 }
 
 #[contracttype]

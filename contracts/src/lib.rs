@@ -9,7 +9,7 @@ mod types;
 #[cfg(test)]
 mod interest_test;
 
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, Vec, BytesN};
 pub use types::{DataKey, InterestDistribution, LegacyStream, Stream, StreamRequest};
 
 const THRESHOLD: u32 = 518400; // ~30 days
@@ -170,6 +170,7 @@ impl StellarStream {
                 interest_strategy: 0, // No interest strategy for legacy streams
                 vault_address: None,  // No vault for legacy streams
                 deposited_principal: legacy_stream.amount, // Same as amount for legacy
+                metadata: None,
             };
 
             env.storage()
@@ -260,6 +261,7 @@ impl StellarStream {
         end_time: u64,
         interest_strategy: u32,
         vault_address: Option<Address>,
+        metadata: Option<BytesN<32>>,
     ) -> u64 {
         Self::check_not_paused(&env);
         sender.require_auth();
@@ -331,6 +333,7 @@ impl StellarStream {
             interest_strategy,
             vault_address,
             deposited_principal: principal,
+            metadata,
         };
 
         // Store stream
@@ -395,6 +398,7 @@ impl StellarStream {
                 interest_strategy: request.interest_strategy,
                 vault_address: request.vault_address.clone(),
                 deposited_principal: request.amount,
+                metadata: request.metadata.clone(),
             };
 
             env.storage()
