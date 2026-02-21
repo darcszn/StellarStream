@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Lato, Poppins } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/nav";
+import { ToastProvider } from "@/components/toast-provider";
 
 const lato = Lato({
   variable: "--font-lato",
@@ -31,6 +32,7 @@ export default function RootLayout({
       <body className={`${lato.variable} ${poppins.variable} antialiased`}>
         <Nav />
         {children}
+        <ToastProvider />
       </body>
     </html>
   );
